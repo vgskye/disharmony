@@ -1,0 +1,13 @@
+token = "YOUR_TOKEN_HERE"
+channel = 0000000000000000000
+linkedRoleId = 0000000000000000000
+pfpLinkTemplate = "https://visage.surgeplay.com/face/512/%UUID%"
+discordMessageTemplate = "[<c:%roleColor%>@${name}</c>] ${content}"
+discordReplyMessageTemplate = "(In reply to <c:%replyToRoleColor%>@${replyToName}</c>) [<c:%roleColor%>@${name}</c>] ${content}"
+badCodeMessage = "Link code invalid!"
+linkedMessage = "Account successfully linked!"
+alreadyLinkedMessage = "Account already linked!"
+unlinkedMessage = "Account successfully unlinked!"
+notLinkedMessage = "Account isn't linked!"
+kickMessageTemplate = "Link your Discord account with <gray>/link ${code}</gray> to join!"
+statusMessageTemplate = "%count% players online"

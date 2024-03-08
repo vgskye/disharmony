@@ -1,0 +1,119 @@
+plugins {
+	id 'fabric-loom' version '1.5-SNAPSHOT'
+	id 'maven-publish'
+  	id "org.jetbrains.kotlin.jvm" version "1.9.22"
+	id "org.jetbrains.kotlin.plugin.serialization" version "1.8.0"
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+	archivesName = project.archives_base_name
+}
+
+repositories {
+	// Add repositories to retrieve artifacts from in here.
+	// You should only use this when depending on other mods because
+	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
+	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
+	// for more information about repositories.
+	maven {
+		url "https://maven.nucleoid.xyz/"
+		name "Nucleoid"
+	}
+	exclusiveContent {
+		forRepository {
+			maven {
+				name = "Modrinth"
+				url = "https://api.modrinth.com/maven"
+			}
+		}
+		filter {
+			includeGroup "maven.modrinth"
+		}
+	}
+	maven {
+		url "https://oss.sonatype.org/content/repositories/snapshots"
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+	modImplementation "net.fabricmc:fabric-language-kotlin:${project.fabric_kotlin_version}"
+
+	include(modImplementation("eu.pb4:placeholder-api:${project.placeholder_api_version}"))
+
+	include(implementation("net.dv8tion:JDA:${project.jda_version}") {
+		exclude module: "opus-java"
+	})
+	include(implementation("club.minnced:jda-ktx:${project.jda_ktx_version}"))
+	include(implementation("net.peanuuutz.tomlkt:tomlkt:${project.tomlkt_version}"))
+
+	include "com.squareup.okio:okio:3.6.0"
+	include "com.squareup.okhttp3:okhttp:4.12.0"
+	include "org.apache.commons:commons-collections4:4.4"
+	include "com.neovisionaries:nv-websocket-client:2.14"
+	include "net.sf.trove4j:trove4j:3.0.3"
+	include "com.fasterxml.jackson.core:jackson-databind:2.13.4.1"
+	include "com.fasterxml.jackson.core:jackson-core:2.16.0"
+
+	modRuntimeOnly "maven.modrinth:styled-chat:2.2.3+1.20.1"
+	modRuntimeOnly "eu.pb4:predicate-api:0.2.1+1.20.1"
+	modRuntimeOnly "eu.pb4:player-data-api:0.2.2+1.19.3"
+	modRuntimeOnly "me.lucko:fabric-permissions-api:0.2-SNAPSHOT"
+}
+
+processResources {
+	inputs.property "version", project.version
+
+	filesMatching("fabric.mod.json") {
+		expand "version": project.version
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 17
+}
+
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {
+	kotlinOptions {
+		jvmTarget = 17
+	}
+}
+
+java {
+	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
+	// if it is present.
+	// If you remove this line, sources will not be generated.
+	withSourcesJar()
+
+	sourceCompatibility = JavaVersion.VERSION_17
+	targetCompatibility = JavaVersion.VERSION_17
+}
+
+jar {
+	from("LICENSE") {
+		rename { "${it}_${project.base.archivesName.get()}"}
+	}
+}
+
+// configure the maven publication
+publishing {
+	publications {
+		mavenJava(MavenPublication) {
+			from components.java
+		}
+	}
+
+	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+	repositories {
+		// Add repositories to publish to here.
+		// Notice: This block does NOT have the same function as the block in the top level.
+		// The repositories here will be used for publishing your artifact, not for
+		// retrieving dependencies.
+	}
+}

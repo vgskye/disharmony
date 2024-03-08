@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "vg.skye.disharmony.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "CrashReportMixin",
+    "PlayerManagerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+	}
+}
