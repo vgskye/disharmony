@@ -51,15 +51,17 @@ dependencies {
 		exclude module: "opus-java"
 	})
 	include(implementation("club.minnced:jda-ktx:${project.jda_ktx_version}"))
-	include(implementation("net.peanuuutz.tomlkt:tomlkt:${project.tomlkt_version}"))
 
-	include "com.squareup.okio:okio:3.6.0"
+	implementation "net.peanuuutz.tomlkt:tomlkt:${project.tomlkt_version}"
+	include "net.peanuuutz.tomlkt:tomlkt-jvm:${project.tomlkt_version}"
+	include "com.squareup.okio:okio-jvm:3.6.0"
 	include "com.squareup.okhttp3:okhttp:4.12.0"
 	include "org.apache.commons:commons-collections4:4.4"
 	include "com.neovisionaries:nv-websocket-client:2.14"
 	include "net.sf.trove4j:trove4j:3.0.3"
 	include "com.fasterxml.jackson.core:jackson-databind:2.13.4.1"
 	include "com.fasterxml.jackson.core:jackson-core:2.16.0"
+	include "com.fasterxml.jackson.core:jackson-annotations:2.13.4.1"
 
 	modRuntimeOnly "maven.modrinth:styled-chat:2.2.3+1.20.1"
 	modRuntimeOnly "eu.pb4:predicate-api:0.2.1+1.20.1"
