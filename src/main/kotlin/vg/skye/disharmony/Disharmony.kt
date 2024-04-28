@@ -1,6 +1,7 @@
 package vg.skye.disharmony
 
 import com.google.common.collect.HashBiMap
+import com.mojang.authlib.GameProfile
 import dev.minn.jda.ktx.coroutines.await
 import dev.minn.jda.ktx.events.CoroutineEventListener
 import dev.minn.jda.ktx.events.onCommand
@@ -14,7 +15,6 @@ import eu.pb4.placeholders.api.Placeholders
 import eu.pb4.placeholders.api.TextParserUtils
 import eu.pb4.placeholders.api.parsers.MarkdownLiteParserV1
 import eu.pb4.placeholders.api.parsers.PatternPlaceholderParser
-import net.dv8tion.jda.api.OnlineStatus
 import net.dv8tion.jda.api.entities.Activity
 import net.dv8tion.jda.api.entities.Message
 import net.dv8tion.jda.api.entities.Role
@@ -25,11 +25,8 @@ import net.dv8tion.jda.api.events.message.MessageReceivedEvent
 import net.dv8tion.jda.api.events.session.ReadyEvent
 import net.dv8tion.jda.api.requests.GatewayIntent
 import net.fabricmc.api.ModInitializer
-import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents
 import net.fabricmc.fabric.api.message.v1.ServerMessageEvents
-import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents
-import net.fabricmc.loader.api.FabricLoader
 import net.minecraft.server.MinecraftServer
 import net.minecraft.text.Style
 import net.minecraft.text.Text
@@ -46,10 +43,12 @@ object Disharmony : ModInitializer, CoroutineEventListener {
 		enableIntents(GatewayIntent.MESSAGE_CONTENT)
 		enableIntents(GatewayIntent.GUILD_WEBHOOKS)
 		addEventListeners(Disharmony)
+		logger.info("Disharmony: initialized client")
 	})
-	private lateinit var channel: TextChannel
-	lateinit var webhook: Webhook
-	private lateinit var role: Role
+	private var channel: TextChannel? = null
+	var webhook: Webhook? = null
+	private var role: Role? = null
+	private var server: MinecraftServer? = null
 
 	private val linkCodeMap = HashBiMap.create<String, UUID>()
 	private val linkMap = LinkData.load()
@@ -87,40 +86,43 @@ object Disharmony : ModInitializer, CoroutineEventListener {
 		client.presence.activity = Activity.customStatus(message)
 	}
 
+	fun checkCanJoin(profile: GameProfile): Text? {
+		if (linkMap.accounts.contains(profile.id)) return null
+
+		val code = linkCodeMap.inverse().computeIfAbsent(profile.id) {
+			"%06X".format(Random.nextInt(0..0xFFFFFF))
+		}
+		val placeholders = mapOf(
+			"code" to Text.literal(code)
+		)
+		val substituted = TextParserUtils.formatText(Config.INSTANCE.kickMessageTemplate)
+		return Placeholders.parseText(
+			substituted,
+			PatternPlaceholderParser.PREDEFINED_PLACEHOLDER_PATTERN,
+			placeholders
+		)
+	}
+
 	override fun onInitialize() {
 		ServerMessageEvents.GAME_MESSAGE.register { _, msg, overlay ->
 			if (overlay) {
 				return@register
 			}
-			channel.sendMessage(toMarkdown(msg)).queue()
+			channel?.sendMessage(toMarkdown(msg))?.queue()
 		}
 
 		ServerMessageEvents.CHAT_MESSAGE.register { msg, player, params ->
 			val sender = params.name.string
 			val pfp = Config.INSTANCE.pfpLinkTemplate.replace("%UUID%", player.uuidAsString)
-			webhook.sendMessage(toMarkdown(msg.content)).apply {
+			webhook?.sendMessage(toMarkdown(msg.content))?.apply {
 				setUsername(sender)
 				setAvatarUrl(pfp)
 				queue()
 			}
 		}
 
-		ServerPlayConnectionEvents.INIT.register { conn, _ ->
-			if (!linkMap.accounts.contains(conn.player.uuid)) {
-				val code = linkCodeMap.inverse().computeIfAbsent(conn.player.uuid) {
-					"%06X".format(Random.nextInt(0..0xFFFFFF))
-				}
-				val placeholders = mapOf(
-					"code" to Text.literal(code)
-				)
-				val substituted = TextParserUtils.formatText(Config.INSTANCE.kickMessageTemplate)
-				val message = Placeholders.parseText(
-					substituted,
-					PatternPlaceholderParser.PREDEFINED_PLACEHOLDER_PATTERN,
-					placeholders
-				)
-				conn.disconnect(message)
-			}
+		ServerLifecycleEvents.SERVER_STARTED.register {
+			server = it
 		}
 
 		ServerLifecycleEvents.SERVER_STOPPING.register {
@@ -128,8 +130,11 @@ object Disharmony : ModInitializer, CoroutineEventListener {
 		}
 
 		ServerLifecycleEvents.SERVER_STOPPED.register {
+			server = null
 			client.shutdownNow()
 		}
+
+		logger.info("Disharmony: initialized server event hooks")
 	}
 
 	private suspend fun onReady() {
@@ -138,11 +143,12 @@ object Disharmony : ModInitializer, CoroutineEventListener {
 			logger.error("Could not find channel specified by config!")
 		} else {
 			channel = maybe
+			val webhooks = maybe.retrieveWebhooks().await()
+			webhook = webhooks.find { webhook ->
+				webhook.name == "MC_DC_INTEGRATION"
+			} ?: maybe.createWebhook("MC_DC_INTEGRATION").await()
 		}
-		val webhooks = channel.retrieveWebhooks().await()
-		webhook = webhooks.find { webhook ->
-			webhook.name == "MC_DC_INTEGRATION"
-		} ?: channel.createWebhook("MC_DC_INTEGRATION").await()
+
 		val maybeRole = client.getRoleById(Config.INSTANCE.linkedRoleId.toLong())
 		if (maybeRole == null) {
 			logger.error("Could not find role specified by config!")
@@ -170,30 +176,34 @@ object Disharmony : ModInitializer, CoroutineEventListener {
 				event.reply(Config.INSTANCE.alreadyLinkedMessage).setEphemeral(true).queue()
 			} else {
 				linkMap.save()
-				event.guild!!.addRoleToMember(event.user, role).await()
+				if (role != null)
+					event.guild!!.addRoleToMember(event.user, role!!).await()
 				event.reply(Config.INSTANCE.linkedMessage).setEphemeral(true).queue()
 			}
 		}
 
 		client.onCommand("unlink") { event ->
 			if (linkMap.accounts.inverse().remove(event.user.idLong) != null) {
+				linkMap.save()
+				if (role != null)
+					event.guild!!.removeRoleFromMember(event.user, role!!).await()
 				event.reply(Config.INSTANCE.unlinkedMessage).setEphemeral(true).queue()
 			} else {
-				event.guild!!.removeRoleFromMember(event.user, role).await()
 				event.reply(Config.INSTANCE.notLinkedMessage).setEphemeral(true).queue()
 			}
 		}
 
-		val server = FabricLoader.getInstance().gameInstance as MinecraftServer
 		val message = Config
 			.INSTANCE
 			.statusMessageTemplate
-			.replace("%count%", server.currentPlayerCount.toString())
+			.replace("%count%", server?.currentPlayerCount.toString())
 		client.presence.activity = Activity.customStatus(message)
+
+		logger.info("Disharmony: readied client")
 	}
 
 	private fun formatDiscordMessage(message: Message): Text {
-		val replyToName = message.referencedMessage?.member?.effectiveName ?: message.referencedMessage?.author?.effectiveName
+		val replyToName = message.referencedMessage?.run { member?.effectiveName ?: author.effectiveName }
 		val replyToColorRaw = (message.referencedMessage?.member?.colorRaw ?: Role.DEFAULT_COLOR_RAW) and 0xFFFFFF
 		val replyToColorHex = "#%06X".format(replyToColorRaw)
 		val name = message.member?.effectiveName ?: message.author.effectiveName
@@ -214,7 +224,7 @@ object Disharmony : ModInitializer, CoroutineEventListener {
 		val placeholders = mapOf(
 			"content" to content,
 			"name" to Text.literal(name),
-			"replyToName" to Text.literal(replyToName),
+			"replyToName" to Text.literal(replyToName ?: ""),
 		)
 		val substituted = TextParserUtils.formatText(processed)
 		return Placeholders.parseText(
@@ -225,15 +235,14 @@ object Disharmony : ModInitializer, CoroutineEventListener {
 	}
 
 	private fun onMessageReceived(event: MessageReceivedEvent) {
-		if (event.channel.idLong != channel.idLong
+		if (event.channel.idLong != channel?.idLong
 			|| event.isWebhookMessage
 			|| event.author.idLong == client.selfUser.idLong) {
 			return
 		}
-		val server = FabricLoader.getInstance().gameInstance as MinecraftServer
 		val message = formatDiscordMessage(event.message)
-		server.sendMessage(message)
-		server.playerManager.playerList.forEach {
+		server?.sendMessage(message)
+		server?.playerManager?.playerList?.forEach {
 			it.sendMessageToClient(message, false)
 		}
 	}

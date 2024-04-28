@@ -2,6 +2,7 @@ package vg.skye.disharmony.mixin;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import net.dv8tion.jda.api.entities.Webhook;
 import net.minecraft.util.crash.CrashReport;
 import okhttp3.*;
 import org.slf4j.Logger;
@@ -40,14 +41,17 @@ public abstract class CrashReportMixin {
                 if (resp.getAsJsonPrimitive("success").getAsBoolean()) {
                     String reportLink = resp.getAsJsonPrimitive("url").getAsString();
                     System.err.println("Crash report uploaded to: " + reportLink);
-                    String url = Disharmony.INSTANCE.getWebhook().getUrl();
-                    var map = new HashMap<String, String>();
-                    map.put("content", reportLink);
-                    map.put("username", "Server Crash Report");
-                    map.put("avatar_url", "https://mclo.gs/img/favicon.ico");
-                    RequestBody jsonBody = RequestBody.create(gson.toJson(map), MediaType.parse("application/json"));
-                    Request webhookRequest = new Request.Builder().url(url).post(jsonBody).build();
-                    client.newCall(webhookRequest).execute().close();
+                    Webhook webhook = Disharmony.INSTANCE.getWebhook();
+                    if (webhook != null) {
+                        String url = webhook.getUrl();
+                        var map = new HashMap<String, String>();
+                        map.put("content", reportLink);
+                        map.put("username", "Server Crash Report");
+                        map.put("avatar_url", "https://mclo.gs/img/favicon.ico");
+                        RequestBody jsonBody = RequestBody.create(gson.toJson(map), MediaType.parse("application/json"));
+                        Request webhookRequest = new Request.Builder().url(url).post(jsonBody).build();
+                        client.newCall(webhookRequest).execute().close();
+                    }
                 } else {
                     throw new RuntimeException(resp.getAsJsonPrimitive("error").getAsString());
                 }
