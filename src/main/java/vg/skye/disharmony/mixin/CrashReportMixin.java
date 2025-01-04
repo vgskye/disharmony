@@ -43,8 +43,8 @@ public abstract class CrashReportMixin {
                     String url = Disharmony.INSTANCE.getWebhook().getUrl();
                     var map = new HashMap<String, String>();
                     map.put("content", reportLink);
-                    map.put("username", "Server Crash Report");
-                    map.put("avatar_url", "https://mclo.gs/img/favicon.ico");
+                    map.put("username", "Server Crashed");
+                    map.put("avatar_url", "https://limbo.skye.vg/9dc8fde5-db89-4d65-9cf4-a73ff8378a07.png");
                     RequestBody jsonBody = RequestBody.create(gson.toJson(map), MediaType.parse("application/json"));
                     Request webhookRequest = new Request.Builder().url(url).post(jsonBody).build();
                     client.newCall(webhookRequest).execute().close();
